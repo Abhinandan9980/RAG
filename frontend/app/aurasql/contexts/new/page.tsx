@@ -1,0 +1,188 @@
+'use client';
+
+export const dynamic = 'force-dynamic';
+
+import { useEffect, useMemo, useState } from 'react';
+import { Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { apiClient } from '@/lib/api';
+import { AuraSqlConnection } from '@/lib/types';
+import { useAuthStore } from '@/lib/store';
+import AuthPage from '@/app/auth/page';
+import { AuraSqlPage } from '@/components/aurasql/AuraSqlPage';
+
+function NewAuraSqlContextPageContent() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const { isAuthenticated } = useAuthStore();
+  const [connections, setConnections] = useState<AuraSqlConnection[]>([]);
+  const [selectedConnection, setSelectedConnection] = useState<string>('');
+  const [tables, setTables] = useState<string[]>([]);
+  const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
+  const [contextName, setContextName] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [loadingTables, setLoadingTables] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const loadConnections = async () => {
+      setLoading(true);
+      try {
+        const list = await apiClient.listAuraSqlConnections();
+        setConnections(list);
+        const fromQuery = params.get('connection');
+        if (fromQuery && list.some((connection) => connection.id === fromQuery)) {
+          setSelectedConnection(fromQuery);
+        } else if (list.length > 0) {
+          setSelectedConnection(list[0].id);
+          if (fromQuery) setError('The requested connection is unavailable. Choose one of your saved connections.');
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load connections');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadConnections();
+  }, [isAuthenticated, params]);
+
+  useEffect(() => {
+    if (!selectedConnection) return;
+    const loadTables = async () => {
+      setLoadingTables(true);
+      setError(null);
+      try {
+        const list = await apiClient.listAuraSqlTables(selectedConnection);
+        setTables(list);
+        setSelectedTables(new Set());
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load tables');
+      } finally {
+        setLoadingTables(false);
+      }
+    };
+
+    loadTables();
+  }, [selectedConnection]);
+
+  const selectedTableList = useMemo(() => Array.from(selectedTables), [selectedTables]);
+
+  if (!isAuthenticated) return <AuthPage />;
+
+  const toggleTable = (table: string) => {
+    setSelectedTables((prev) => {
+      const next = new Set(prev);
+      if (next.has(table)) {
+        next.delete(table);
+      } else {
+        next.add(table);
+      }
+      return next;
+    });
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedConnection || selectedTables.size === 0 || !contextName.trim()) return;
+
+    setError(null);
+    try {
+      const context = await apiClient.createAuraSqlContext({
+        connection_id: selectedConnection,
+        name: contextName.trim(),
+        table_names: selectedTableList,
+      });
+      router.push(`/aurasql/query?context=${context.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create context');
+    }
+  };
+
+  return (
+    <AuraSqlPage title="Choose the data context" description="Name this reusable context, select the relevant tables, and Keystone SQL will carry that scope into the query workspace.">
+      <div className="mx-auto w-full max-w-4xl py-3">
+          <Card className="border-border bg-workspace-raised shadow-sm">
+            <CardHeader>
+              <CardTitle>New Schema Context</CardTitle>
+              <CardDescription>Select tables and save a reusable context.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-5" onSubmit={handleSubmit}>
+                {(loading || loadingTables) ? <p aria-live="polite" className="rounded-lg border border-border bg-workspace-inset p-3 text-sm text-muted-foreground">{loading ? 'Loading your saved connections…' : 'Loading available tables…'}</p> : null}
+                <div className="space-y-2">
+                  <Label htmlFor="context-name">Context Name</Label>
+                  <Input id="context-name" value={contextName} onChange={(e) => setContextName(e.target.value)} placeholder="Sales analytics" required />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Connection</Label>
+                  {loading ? (
+                    <p className="text-sm text-muted-foreground">Loading connections...</p>
+                  ) : (
+                    <Select value={selectedConnection} onValueChange={setSelectedConnection}>
+                      <SelectTrigger aria-label="Connection" className="w-full">
+                        <SelectValue placeholder="Select a connection" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {connections.map((conn) => (
+                          <SelectItem key={conn.id} value={conn.id}>
+                            {conn.name} • {conn.database}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3"><Label>Tables</Label><span aria-live="polite" className="rounded-full border border-border bg-workspace-inset px-2.5 py-1 text-xs font-medium">{selectedTables.size} selected</span></div>
+                  {selectedTableList.length ? <p className="line-clamp-2 text-xs text-muted-foreground">Selected: {selectedTableList.join(', ')}</p> : <p className="text-xs text-muted-foreground">Choose only the tables needed for this context.</p>}
+                  {loadingTables ? (
+                    <p className="text-sm text-muted-foreground">Loading tables...</p>
+                  ) : tables.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No tables found.</p>
+                  ) : (
+                    <div className="grid max-h-72 gap-2 overflow-y-auto rounded-lg border border-border p-2 md:grid-cols-2">
+                      {tables.map((table) => (
+                        <label key={table} className="flex items-center gap-2 rounded-lg border border-border bg-workspace-inset px-3 py-2">
+                          <Checkbox checked={selectedTables.has(table)} onCheckedChange={() => toggleTable(table)} />
+                          <span className="text-sm">{table}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {error && <p className="text-sm text-red-500">{error}</p>}
+
+                <div className="flex justify-between gap-3">
+                  <Button type="button" variant="ghost" onClick={() => router.push('/aurasql/contexts')}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={loading || loadingTables || selectedTables.size === 0 || !contextName.trim()}>
+                    Save Context
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+      </div>
+    </AuraSqlPage>
+  );
+}
+
+export default function NewAuraSqlContextPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewAuraSqlContextPageContent />
+    </Suspense>
+  );
+}

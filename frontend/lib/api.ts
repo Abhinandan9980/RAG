@@ -1,0 +1,870 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * API client for the RAG backend.
+ */
+
+import {
+  ChatRequest, 
+  ChatResponse, 
+  PingResponse, 
+  User, 
+  ChatBootstrapResponse,
+  AskFileContent,
+  UserDocumentResponse,
+  BulkDeleteRequest,
+  BulkDeleteResponse,
+  TreeGenerationResponse,
+  AuraSqlConnection,
+  AuraSqlContext,
+  AuraSqlQueryResponse,
+  AuraSqlExecuteResponse,
+  AuraSqlHistoryItem,
+  AuraSqlSession,
+  ResumeUploadResponse,
+  ResumeListResponse,
+  ResumeAnalyzeRequest,
+  ResumeAnalyzeResponse,
+  ResumeHistoryResponse,
+  ResumeDashboardResponse,
+  ResumeGenData,
+  ResumeGenHealthResponse
+} from './types';
+import { useAuthStore } from '@/lib/store';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const API_VERSION = process.env.NEXT_PUBLIC_API_VERSION || 'v1';
+const BASE_PATH = `${API_BASE_URL}/api/${API_VERSION}`;
+
+class ApiClient {
+  private normalizeResumeGenPayload(data: ResumeGenData): Record<string, unknown> {
+    return {
+      name: data.name,
+      email: data.email,
+      phone: data.phone || '',
+      location: data.location || '',
+      linkedin_url: data.linkedin || '',
+      github_url: data.github || '',
+      portfolio_url: data.portfolio || '',
+      summary: data.summary || '',
+      experiences: (data.experience || []).map((e) => ({
+        title: e.position || '',
+        company: e.company || '',
+        location: e.location || '',
+        dates: e.duration || '',
+        responsibilities: Array.isArray(e.responsibilities) ? e.responsibilities.filter(Boolean) : [],
+      })),
+      education: (data.education || []).map((e) => ({
+        institution: e.institution || '',
+        degree: e.degree || '',
+        graduation_date: e.duration || '',
+        gpa: e.gpa || '',
+        location: e.location || '',
+      })),
+      projects: (data.projects || []).map((p) => ({
+        title: p.name || '',
+        descriptions: [
+          ...(Array.isArray(p.descriptions) ? p.descriptions.filter(Boolean) : []),
+          ...(typeof p.description === 'string' && p.description.trim() ? [p.description.trim()] : []),
+        ].filter(Boolean),
+        technologies: p.technologies || '',
+        link: p.link || '',
+        dates: p.dates || '',
+      })),
+      skills: data.skills || {},
+      certifications: data.certifications || [],
+      awards: data.awards || [],
+      languages: data.languages || [],
+      custom_sections: data.customSections || [],
+      section_order: data.sectionOrder || [],
+    };
+  }
+
+  private getAuthHeaders(): Record<string, string> {
+    const { accessToken } = useAuthStore.getState();
+    const headers: Record<string, string> = {
+      'ngrok-skip-browser-warning': 'true',
+    };
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+    return headers;
+  }
+
+  private async refreshTokens(): Promise<boolean> {
+    const { refreshToken, loginWithTokens, user } = useAuthStore.getState();
+    if (!refreshToken || !user) return false;
+
+    try {
+      const response = await fetch(`${BASE_PATH}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+
+      if (!response.ok) return false;
+      const data = await response.json();
+      loginWithTokens(data.user, data.access_token, data.refresh_token);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async request<T>(
+    endpoint: string,
+    options?: RequestInit
+  ): Promise<T> {
+    const url = `${BASE_PATH}${endpoint}`;
+
+    const response = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.getAuthHeaders(),
+        ...options?.headers,
+      },
+      ...options,
+    });
+
+    if (response.status === 401) {
+      const refreshed = await this.refreshTokens();
+      if (refreshed) {
+        const retry = await fetch(url, {
+          headers: {
+            'Content-Type': 'application/json',
+            ...this.getAuthHeaders(),
+            ...options?.headers,
+          },
+          ...options,
+        });
+        if (!retry.ok) {
+          const retryError = await retry.json().catch(() => ({ message: 'An error occurred' }));
+          throw new Error(retryError.message || retryError.detail?.[0]?.msg || `HTTP ${retry.status}`);
+        }
+        if (retry.status === 204) {
+          return undefined as T;
+        }
+        return retry.json();
+      }
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        message: 'An error occurred',
+      }));
+      console.error('[API] Request failed:', response.status, error);
+      throw new Error(error.message || error.detail?.[0]?.msg || `HTTP ${response.status}`);
+    }
+
+    // Handle 204 No Content - don't try to parse JSON
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    return response.json();
+  }
+
+  async login(email: string, password: string): Promise<User> {
+    const response = await this.request<{ user: User; access_token: string; refresh_token: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    useAuthStore.getState().loginWithTokens(response.user, response.access_token, response.refresh_token);
+    return response.user;
+  }
+
+  async register(email: string, password: string, full_name?: string): Promise<User> {
+    const response = await this.request<{ user: User; access_token: string; refresh_token: string }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, full_name }),
+    });
+    useAuthStore.getState().loginWithTokens(response.user, response.access_token, response.refresh_token);
+    return response.user;
+  }
+
+  async getChatBootstrap(
+    activeSessionId?: string,
+    options?: { includeMessages?: boolean; sessionLimit?: number; messageLimit?: number }
+  ): Promise<ChatBootstrapResponse> {
+    const params = new URLSearchParams();
+    if (activeSessionId) {
+      params.set('active_session_id', activeSessionId);
+    }
+    if (options?.includeMessages === false) {
+      params.set('include_messages', 'false');
+    }
+    if (typeof options?.sessionLimit === 'number') {
+      params.set('session_limit', String(options.sessionLimit));
+    }
+    if (typeof options?.messageLimit === 'number') {
+      params.set('message_limit', String(options.messageLimit));
+    }
+    const query = params.toString();
+    return this.request<ChatBootstrapResponse>(`/history/bootstrap${query ? `?${query}` : ''}`);
+  }
+
+  async deleteChatSession(sessionId: string): Promise<void> {
+    await this.request(`/history/${sessionId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async deleteAllChatHistory(userId: number): Promise<void> {
+    await this.request(`/history/user/${userId}/all`, {
+      method: 'DELETE',
+    });
+  }
+
+  async query(request: ChatRequest): Promise<ChatResponse> {
+    return this.request<ChatResponse>('/chat/query', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async queryStream(
+    request: ChatRequest,
+    onEvent: (event: string, data: unknown) => void
+  ): Promise<ChatResponse> {
+    const doStreamRequest = async () => {
+      return fetch(`${BASE_PATH}/chat/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...this.getAuthHeaders(),
+        },
+        body: JSON.stringify({ ...request, stream: true }),
+      });
+    };
+
+    let response = await doStreamRequest();
+    if (response.status === 401) {
+      const refreshed = await this.refreshTokens();
+      if (refreshed) {
+        response = await doStreamRequest();
+      }
+    }
+
+    if (!response.ok || !response.body) {
+      const error = await response.json().catch(() => ({ message: 'Streaming failed' }));
+      throw new Error(error.message || 'Streaming failed');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalPayload: ChatResponse | null = null;
+
+    const processEventChunk = (chunk: string) => {
+      const lines = chunk.split('\n');
+      let eventName = 'message';
+      let dataText = '';
+
+      for (const line of lines) {
+        if (line.startsWith('event:')) {
+          eventName = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          dataText += line.slice(5).trim();
+        }
+      }
+
+      if (!dataText) return;
+      let parsed: unknown = dataText;
+      try {
+        parsed = JSON.parse(dataText);
+      } catch {
+        parsed = dataText;
+      }
+
+      onEvent(eventName, parsed);
+      if (eventName === 'final') {
+        finalPayload = parsed as ChatResponse;
+      }
+      if (eventName === 'error') {
+        const errorMessage = typeof parsed === 'object' && parsed && 'message' in parsed
+          ? String((parsed as { message?: unknown }).message ?? 'Streaming error')
+          : 'Streaming error';
+        throw new Error(errorMessage);
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+      for (const eventChunk of events) {
+        if (eventChunk.trim()) {
+          processEventChunk(eventChunk);
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      processEventChunk(buffer);
+    }
+
+    if (!finalPayload) {
+      throw new Error('Streaming completed without final payload');
+    }
+
+    return finalPayload;
+  }
+
+  async clearHistory(sessionId: string): Promise<void> {
+    await this.request(`/chat/history/${sessionId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async uploadDocument(
+    file: File,
+    userId: number,
+    metadata?: { title?: string; category?: string }
+  ): Promise<Record<string, unknown>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('user_id', userId.toString());
+    
+    if (metadata?.title) {
+      formData.append('title', metadata.title);
+    }
+    if (metadata?.category) {
+      formData.append('category', metadata.category);
+    }
+
+    const doUpload = async () => {
+      const response = await fetch(`${BASE_PATH}/documents/upload`, {
+        method: 'POST',
+        headers: {
+          ...this.getAuthHeaders(),
+        },
+        body: formData,
+      });
+      return response;
+    };
+
+    let response = await doUpload();
+
+    if (response.status === 401) {
+      const refreshed = await this.refreshTokens();
+      if (refreshed) {
+        response = await doUpload();
+      }
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        message: 'Upload failed',
+      }));
+      throw new Error(error.message || 'Upload failed');
+    }
+
+    return response.json() as Promise<Record<string, unknown>>;
+  }
+
+  async extractFileForAskMode(file: File): Promise<AskFileContent> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const doExtract = async () => {
+      const response = await fetch(`${BASE_PATH}/chat/extract-file`, {
+        method: 'POST',
+        headers: {
+          ...this.getAuthHeaders(),
+        },
+        body: formData,
+      });
+      return response;
+    };
+
+    let response = await doExtract();
+    if (response.status === 401) {
+      const refreshed = await this.refreshTokens();
+      if (refreshed) {
+        response = await doExtract();
+      }
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Extraction failed' }));
+      throw new Error(error.message || 'Extraction failed');
+    }
+
+    return response.json() as Promise<AskFileContent>;
+  }
+
+  async getUserDocuments(userId: number): Promise<UserDocumentResponse> {
+    return this.request<UserDocumentResponse>(`/documents/my-documents/${userId}`);
+  }
+
+  async bulkDeleteDocuments(request: BulkDeleteRequest): Promise<BulkDeleteResponse> {
+    return this.request<BulkDeleteResponse>('/documents/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async generateTree(documentId: string, userId: number): Promise<TreeGenerationResponse> {
+    return this.request<TreeGenerationResponse>(`/documents/${documentId}/generate-tree`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    });
+  }
+
+  async createAuraSqlConnection(payload: {
+    name: string;
+    db_type: string;
+    host: string;
+    port: number;
+    username: string;
+    password: string;
+    database: string;
+    schema_name?: string;
+    ssl_required?: boolean;
+  }): Promise<AuraSqlConnection> {
+    return this.request<AuraSqlConnection>('/aurasql/connections', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async listAuraSqlConnections(): Promise<AuraSqlConnection[]> {
+    const response = await this.request<{ connections: AuraSqlConnection[] }>('/aurasql/connections', {
+      method: 'GET',
+    });
+    return response.connections;
+  }
+
+  async deleteAuraSqlConnection(connectionId: string): Promise<void> {
+    await this.request<void>(`/aurasql/connections/${connectionId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getAuraSqlConnection(connectionId: string): Promise<AuraSqlConnection> {
+    return this.request<AuraSqlConnection>(`/aurasql/connections/${connectionId}`, {
+      method: 'GET',
+    });
+  }
+
+  async updateAuraSqlConnection(connectionId: string, payload: Partial<{ 
+    name: string;
+    db_type: string;
+    host: string;
+    port: number;
+    username: string;
+    password: string;
+    database: string;
+    schema_name?: string;
+    ssl_required: boolean;
+  }>): Promise<AuraSqlConnection> {
+    return this.request<AuraSqlConnection>(`/aurasql/connections/${connectionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async listAuraSqlTables(connectionId: string): Promise<string[]> {
+    const response = await this.request<{ tables: string[] }>(`/aurasql/connections/${connectionId}/tables`, {
+      method: 'GET',
+    });
+    return response.tables;
+  }
+
+  async createAuraSqlContext(payload: {
+    connection_id: string;
+    name: string;
+    table_names: string[];
+    is_temporary?: boolean;
+  }): Promise<AuraSqlContext> {
+    return this.request<AuraSqlContext>('/aurasql/contexts', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async listAuraSqlContexts(): Promise<AuraSqlContext[]> {
+    const response = await this.request<{ contexts: AuraSqlContext[] }>('/aurasql/contexts', {
+      method: 'GET',
+    });
+    return response.contexts;
+  }
+
+  async getAuraSqlContext(contextId: string): Promise<AuraSqlContext> {
+    return this.request<AuraSqlContext>(`/aurasql/contexts/${contextId}`, {
+      method: 'GET',
+    });
+  }
+
+  async refreshAuraSqlContext(contextId: string): Promise<AuraSqlContext> {
+    return this.request<AuraSqlContext>(`/aurasql/contexts/${contextId}/refresh`, {
+      method: 'POST',
+    });
+  }
+
+  async updateAuraSqlContext(contextId: string, payload: Partial<{
+    name: string;
+    table_names: string[];
+    is_temporary: boolean;
+  }>): Promise<AuraSqlContext> {
+    return this.request<AuraSqlContext>(`/aurasql/contexts/${contextId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteAuraSqlContext(contextId: string): Promise<void> {
+    await this.request<void>(`/aurasql/contexts/${contextId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getAuraSqlRecommendations(contextId: string): Promise<string[]> {
+    const response = await this.request<{ recommendations: string[] }>('/aurasql/recommendations', {
+      method: 'POST',
+      body: JSON.stringify({ context_id: contextId }),
+    });
+    return response.recommendations;
+  }
+
+  async generateAuraSqlQuery(
+    contextId: string,
+    query: string,
+    outputDialect?: string
+  ): Promise<AuraSqlQueryResponse> {
+    return this.request<AuraSqlQueryResponse>('/aurasql/query', {
+      method: 'POST',
+      body: JSON.stringify({ context_id: contextId, query, output_dialect: outputDialect }),
+    });
+  }
+
+  async generateAuraSqlQueryWithSession(
+    contextId: string,
+    query: string,
+    sessionId?: string,
+    outputDialect?: string
+  ): Promise<AuraSqlQueryResponse> {
+    return this.request<AuraSqlQueryResponse>('/aurasql/query', {
+      method: 'POST',
+      body: JSON.stringify({
+        context_id: contextId,
+        query,
+        session_id: sessionId,
+        output_dialect: outputDialect,
+      }),
+    });
+  }
+
+  async executeAuraSql(connectionId: string, sql: string): Promise<AuraSqlExecuteResponse> {
+    return this.request<AuraSqlExecuteResponse>('/aurasql/execute', {
+      method: 'POST',
+      body: JSON.stringify({ connection_id: connectionId, sql }),
+    });
+  }
+
+  async executeAuraSqlWithSession(connectionId: string, sql: string, sessionId?: string): Promise<AuraSqlExecuteResponse> {
+    return this.request<AuraSqlExecuteResponse>('/aurasql/execute', {
+      method: 'POST',
+      body: JSON.stringify({ connection_id: connectionId, sql, session_id: sessionId }),
+    });
+  }
+
+  async listAuraSqlHistory(): Promise<AuraSqlHistoryItem[]> {
+    return this.request<AuraSqlHistoryItem[]>('/aurasql/history', {
+      method: 'GET',
+    });
+  }
+
+  async listAuraSqlSessions(): Promise<AuraSqlSession[]> {
+    return this.request<AuraSqlSession[]>('/aurasql/history/sessions', {
+      method: 'GET',
+    });
+  }
+
+  async uploadResume(file: File, userId: number): Promise<ResumeUploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('user_id', userId.toString());
+
+    const doUpload = async () => {
+      const response = await fetch(`${BASE_PATH}/nexus/resumes/upload`, {
+        method: 'POST',
+        headers: {
+          ...this.getAuthHeaders(),
+        },
+        body: formData,
+      });
+      return response;
+    };
+
+    let response = await doUpload();
+
+    if (response.status === 401) {
+      const refreshed = await this.refreshTokens();
+      if (refreshed) {
+        response = await doUpload();
+      }
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Upload failed' }));
+      throw new Error(error.message || 'Upload failed');
+    }
+
+    return response.json();
+  }
+
+  async listResumes(userId: number): Promise<ResumeListResponse> {
+    return this.request<ResumeListResponse>(`/nexus/resumes/${userId}`);
+  }
+
+  async analyzeResume(request: ResumeAnalyzeRequest): Promise<ResumeAnalyzeResponse> {
+    return this.request<ResumeAnalyzeResponse>('/nexus/resumes/analyze', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async getResumeHistory(userId: number): Promise<ResumeHistoryResponse> {
+    return this.request<ResumeHistoryResponse>(`/nexus/resumes/history/${userId}`);
+  }
+
+  async getResumeDashboard(userId: number): Promise<ResumeDashboardResponse> {
+    return this.request<ResumeDashboardResponse>(`/nexus/dashboard/${userId}`);
+  }
+
+  async deleteResume(userId: number, resumeId: string): Promise<{ message: string; resume_id: string }> {
+    return this.request<{ message: string; resume_id: string }>(`/nexus/resumes/${userId}/${resumeId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getAuraSqlSessionHistory(sessionId: string): Promise<AuraSqlHistoryItem[]> {
+    return this.request<AuraSqlHistoryItem[]>(`/aurasql/history/sessions/${sessionId}`, {
+      method: 'GET',
+    });
+  }
+
+  async getTreeStatus(documentId: string): Promise<TreeGenerationResponse> {
+    return this.request<TreeGenerationResponse>(`/documents/${documentId}/tree-status`);
+  }
+
+  async checkHealth(): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>('/health');
+  }
+
+  async pingServices(): Promise<PingResponse> {
+    return this.request<PingResponse>('/health/ping');
+  }
+
+  // ── Analysis Methods ────────────────────────────────────
+  async uploadAnalysisFile(file: File): Promise<{ source_id: string; filename: string; rows: number; columns: number }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const doUpload = async () => {
+      const response = await fetch(`${BASE_PATH}/analysis/upload`, {
+        method: 'POST',
+        headers: {
+          ...this.getAuthHeaders(),
+        },
+        body: formData,
+      });
+      return response;
+    };
+
+    let response = await doUpload();
+
+    if (response.status === 401) {
+      const refreshed = await this.refreshTokens();
+      if (refreshed) {
+        response = await doUpload();
+      }
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Upload failed' }));
+      throw new Error(error.message || error.detail || 'Upload failed');
+    }
+
+    return response.json();
+  }
+
+  async startAnalysisFromUpload(payload: {
+    source_id: string;
+    query: string;
+    config: Record<string, unknown>;
+  }): Promise<{ job_id: string; status: string }> {
+    return this.request<{ job_id: string; status: string }>('/analysis/from-upload', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async listAnalysisJobs(): Promise<{ jobs: Array<Record<string, unknown>>; total: number }> {
+    return this.request<{ jobs: Array<Record<string, unknown>>; total: number }>('/analysis');
+  }
+
+  async cancelAnalysisJob(jobId: string): Promise<void> {
+    await this.request<void>(`/analysis/${jobId}/cancel`, { method: 'POST' });
+  }
+
+  async deleteAnalysisJob(jobId: string): Promise<void> {
+    await this.request<void>(`/analysis/${jobId}`, { method: 'DELETE' });
+  }
+
+  async getAnalysisStatus(jobId: string): Promise<{
+    job_id: string;
+    status: string;
+    query: string;
+    source_type: string;
+    created_at: string;
+    updated_at: string;
+    completed_at: string | null;
+    error_message: string | null;
+    progress_events: Array<{ step_name: string; timestamp: string; payload: Record<string, unknown> }>;
+  }> {
+    return this.request<{
+      job_id: string;
+      status: string;
+      query: string;
+      source_type: string;
+      created_at: string;
+      updated_at: string;
+      completed_at: string | null;
+      error_message: string | null;
+      progress_events: Array<{ step_name: string; timestamp: string; payload: Record<string, unknown> }>;
+    }>(`/analysis/${jobId}`);
+  }
+
+  async getAnalysisReport(jobId: string): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>(`/analysis/${jobId}/report`);
+  }
+
+  getAnalysisDownloadUrl(jobId: string): string {
+    return `${BASE_PATH}/analysis/${jobId}/report/download`;
+  }
+
+  async downloadAnalysisReport(jobId: string): Promise<void> {
+    const url = this.getAnalysisDownloadUrl(jobId);
+    const response = await fetch(url, { headers: { ...this.getAuthHeaders() } });
+    if (response.status === 401) {
+      const refreshed = await this.refreshTokens();
+      if (refreshed) {
+        return this.downloadAnalysisReport(jobId);
+      }
+    }
+    if (!response.ok) throw new Error('Download failed');
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = `analysis-report-${jobId.slice(0, 8)}.pptx`;
+    a.click();
+    URL.revokeObjectURL(blobUrl);
+  }
+
+  // ── ResumeGen Methods ────────────────────────────────────
+  async checkResumeGenHealth(): Promise<ResumeGenHealthResponse> {
+    return this.request<ResumeGenHealthResponse>('/resumegen/health');
+  }
+
+  async generateResumePdf(data: ResumeGenData): Promise<Blob> {
+    const latex = await this.generateResumeLatex(data);
+
+    const response = await fetch('/api/latex-to-pdf', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ latex }),
+    });    
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Generation failed' }));
+      throw new Error(err.detail || err.error || `HTTP ${response.status}`);
+    }
+    return response.blob();
+  }
+
+  async generateResumeLatex(data: ResumeGenData): Promise<string> {
+    const url = `${BASE_PATH}/resumegen/generate`;
+    const normalizedData = this.normalizeResumeGenPayload(data);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.getAuthHeaders(),
+      },
+      body: JSON.stringify({ data: normalizedData, format: 'latex' }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ detail: 'Generation failed' }));
+      throw new Error(err.detail || `HTTP ${response.status}`);
+    }
+    return response.text();
+  }
+
+  // ── Workflows Methods ────────────────────────────────────
+  async startAutoTailor(payload: {
+    resume_id: string;
+    job_description: string;
+    target_score?: number;
+    max_iterations?: number;
+  }): Promise<Record<string, any>> {
+    return this.request<Record<string, any>>('/workflows/auto-tailor/start', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getAutoTailorStatus(analysisId: string): Promise<Record<string, any>> {
+    return this.request<Record<string, any>>(`/workflows/auto-tailor/${analysisId}`, {
+      method: 'GET',
+    });
+  }
+
+  async respondToAutoTailor(
+    analysisId: string,
+    payload: {
+      action: 'approve' | 'abort' | 'refine';
+      user_feedback?: string;
+    }
+  ): Promise<Record<string, any>> {
+    return this.request<Record<string, any>>(`/workflows/auto-tailor/${analysisId}/respond`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  getAutoTailorDownloadUrl(analysisId: string): string {
+    return `${BASE_PATH}/workflows/auto-tailor/${analysisId}/download`;
+  }
+
+  async downloadAutoTailorPdf(analysisId: string): Promise<void> {
+    const url = this.getAutoTailorDownloadUrl(analysisId);
+    const response = await fetch(url, { headers: { ...this.getAuthHeaders() } });
+    if (response.status === 401) {
+      const refreshed = await this.refreshTokens();
+      if (refreshed) {
+        return this.downloadAutoTailorPdf(analysisId);
+      }
+    }
+    if (!response.ok) throw new Error('Download failed');
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = `tailored-resume-${analysisId.slice(0, 8)}.pdf`;
+    a.click();
+    URL.revokeObjectURL(blobUrl);
+  }
+}
+
+export const apiClient = new ApiClient();

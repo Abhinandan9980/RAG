@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-09T00:00:00Z",
+  "title": "Design System: Keystone",
+  "extensions": {
+    "colorMeta": {
+      "brass-copper": {
+        "role": "primary",
+        "displayName": "Brass Copper",
+        "canonical": "hsl(36 48% 40%)",
+        "tonalRamp": ["hsl(36 48% 15%)", "hsl(36 48% 25%)", "hsl(36 48% 34%)", "hsl(36 48% 40%)", "hsl(36 46% 50%)", "hsl(36 42% 56%)", "hsl(36 40% 70%)", "hsl(36 38% 88%)"]
+      },
+      "signal-orange": {
+        "role": "secondary",
+        "displayName": "Signal Orange",
+        "canonical": "hsl(18 82% 46%)",
+        "tonalRamp": ["hsl(18 82% 15%)", "hsl(18 82% 25%)", "hsl(18 82% 36%)", "hsl(18 82% 46%)", "hsl(18 85% 52%)", "hsl(18 88% 56%)", "hsl(18 85% 72%)", "hsl(18 80% 90%)"]
+      },
+      "instrument-data-blue": {
+        "role": "secondary",
+        "displayName": "Instrument Data Blue",
+        "canonical": "hsl(200 70% 38%)",
+        "tonalRamp": ["hsl(200 70% 15%)", "hsl(200 70% 22%)", "hsl(200 70% 30%)", "hsl(200 70% 38%)", "hsl(200 69% 48%)", "hsl(200 68% 58%)", "hsl(200 65% 74%)", "hsl(200 60% 90%)"]
+      },
+      "surveyor-ink": {
+        "role": "neutral",
+        "displayName": "Surveyor Ink",
+        "canonical": "hsl(222 46% 7%)",
+        "tonalRamp": ["hsl(222 46% 5%)", "hsl(222 44% 8%)", "hsl(222 40% 12%)", "hsl(222 30% 20%)", "hsl(222 20% 40%)", "hsl(222 12% 60%)", "hsl(220 10% 80%)", "hsl(40 28% 93%)"]
+      },
+      "workspace-field": {
+        "role": "neutral",
+        "displayName": "Workspace Field",
+        "canonical": "hsl(40 32% 96%)",
+        "tonalRamp": ["hsl(222 46% 7%)", "hsl(222 38% 10%)", "hsl(222 24% 14%)", "hsl(40 18% 82%)", "hsl(40 20% 89%)", "hsl(40 28% 93%)", "hsl(40 30% 96%)", "hsl(40 28% 99%)"]
+      },
+      "contour-card": {
+        "role": "neutral",
+        "displayName": "Contour Card Paper",
+        "canonical": "hsl(40 28% 99%)",
+        "tonalRamp": ["hsl(222 38% 10%)", "hsl(222 30% 20%)", "hsl(222 15% 40%)", "hsl(40 15% 70%)", "hsl(40 20% 85%)", "hsl(40 24% 92%)", "hsl(40 26% 96%)", "hsl(40 28% 99%)"]
+      },
+      "border-etch": {
+        "role": "neutral",
+        "displayName": "Border Etch",
+        "canonical": "hsl(40 16% 82%)",
+        "tonalRamp": ["hsl(222 20% 12%)", "hsl(222 20% 19%)", "hsl(222 15% 30%)", "hsl(40 14% 55%)", "hsl(40 15% 70%)", "hsl(40 16% 82%)", "hsl(40 17% 90%)", "hsl(40 18% 96%)"]
+      },
+      "chart-4-verified-green": {
+        "role": "status",
+        "displayName": "Chart-4 Verified Green",
+        "canonical": "hsl(150 40% 32%)",
+        "tonalRamp": ["hsl(150 40% 12%)", "hsl(150 40% 18%)", "hsl(150 40% 26%)", "hsl(150 40% 32%)", "hsl(150 38% 40%)", "hsl(150 35% 45%)", "hsl(150 32% 62%)", "hsl(150 28% 85%)"]
+      },
+      "destructive": {
+        "role": "status",
+        "displayName": "Destructive Red",
+        "canonical": "hsl(4 68% 45%)",
+        "tonalRamp": ["hsl(4 68% 15%)", "hsl(4 68% 24%)", "hsl(4 68% 34%)", "hsl(4 68% 45%)", "hsl(4 64% 55%)", "hsl(4 62% 42%)", "hsl(4 60% 72%)", "hsl(4 55% 90%)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Landing hero headline only ('Answers, surveyed.')." },
+      "headline": { "displayName": "Headline", "purpose": "Landing section headers (CapabilityStory, TechnicalProof, CreatorStory)." },
+      "title": { "displayName": "Title", "purpose": "CanvasHeader's per-studio page title; sub-headers." },
+      "body": { "displayName": "Body", "purpose": "Paragraph copy, descriptions, supporting lines." },
+      "label": { "displayName": "Label", "purpose": "Mono, uppercase readouts: confidence %, ContextRibbon label, badges." }
+    },
+    "shadows": [
+      { "name": "ambient-card", "value": "shadow-sm (Tailwind default)", "purpose": "Default Card elevation; near-imperceptible." },
+      { "name": "glass-panel", "value": "0 18px 60px -40px rgba(0,0,0,0.35) [dark] / 0 12px 38px -30px rgba(15,23,42,0.15) [light]", "purpose": "Hero instrument panel floating over SurveyScene; the one scoped glass moment." },
+      { "name": "overlay-dialog", "value": "shadow-2xl", "purpose": "Inspector slide-in panel over dimmed backdrop." },
+      { "name": "confidence-pulse", "value": "0 0 26px hsl(var(--signal) / 0.35) at peak, keyframe pulse-glow 4s ease-in-out infinite", "purpose": "Breathing glow on signal-orange elements signaling live/certifying state; respects prefers-reduced-motion." }
+    ],
+    "motion": [
+      { "name": "reveal-up", "value": "translate3d(0,18px,0)->none, opacity 0->1, 0.9s ease, staggered .08s delay steps", "purpose": "Default entrance for hero/section content on landing." },
+      { "name": "survey-lock", "value": "stroke-dashoffset var(--survey-len,200)->0, opacity .2->1", "purpose": "Triangulation sightline 'lock-on' animation in TriangulationMark, landing-only." },
+      { "name": "inspector-slide", "value": "opacity 0->1, x 32->0, 0.32s cubic-bezier(0.22,1,0.36,1)", "purpose": "Inspector panel open/close, respects useReducedMotion." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "2xl-container-cap", "value": "1400px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button (Landing Pill)",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Full-pill CTA used on the landing hero ('Enter the workspace').",
+      "html": "<button class=\"ds-btn-primary\">Enter the workspace</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 8px; border-radius: 9999px; background: hsl(36 48% 40%); color: hsl(40 32% 98%); font-weight: 600; padding: 12px 20px; border: none; transition: opacity 0.2s; } .ds-btn-primary:hover { opacity: 0.9; } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 2px hsl(40 32% 96%), 0 0 0 4px hsl(36 48% 40%); }"
+    },
+    {
+      "name": "Primary Button (In-App)",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "shadcn default variant button used across studio screens.",
+      "html": "<button class=\"ds-btn-app-primary\">Save changes</button>",
+      "css": ".ds-btn-app-primary { display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 16px; border-radius: 6px; background: hsl(36 48% 40%); color: hsl(40 32% 98%); font-size: 14px; font-weight: 500; border: none; transition: background-color 0.2s; } .ds-btn-app-primary:hover { background: hsl(36 48% 40% / 0.9); } .ds-btn-app-primary:focus-visible { outline: none; box-shadow: 0 0 0 2px hsl(36 48% 40%), 0 0 0 4px hsl(40 32% 96%); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card-default",
+      "description": "Default content surface, one step off page background.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-header\"><div class=\"ds-card-title\">Report ready</div><div class=\"ds-card-desc\">Generated from your uploaded dataset.</div></div><div class=\"ds-card-content\">Confidence: 92%</div></div>",
+      "css": ".ds-card { border-radius: 8px; border: 1px solid hsl(40 16% 82% / 0.7); background: hsl(40 28% 99%); color: hsl(222 40% 12%); box-shadow: 0 1px 2px rgba(0,0,0,0.05); } .ds-card-header { display: flex; flex-direction: column; gap: 6px; padding: 24px; } .ds-card-title { font-size: 20px; font-weight: 600; } .ds-card-desc { font-size: 14px; color: hsl(222 12% 40%); } .ds-card-content { padding: 24px; padding-top: 0; }"
+    },
+    {
+      "name": "Select",
+      "kind": "input",
+      "refersTo": null,
+      "description": "Radix-based select trigger, replacing raw native <select> across studio forms.",
+      "html": "<button class=\"ds-select-trigger\">Fast mode <svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M6 9l6 6 6-6\"/></svg></button>",
+      "css": ".ds-select-trigger { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 40px; padding: 8px 12px; border-radius: 6px; border: 1px solid hsl(40 16% 82%); background: hsl(40 32% 96%); font-size: 14px; color: hsl(222 40% 12%); } .ds-select-trigger:focus-visible { outline: none; box-shadow: 0 0 0 2px hsl(36 48% 40%), 0 0 0 4px hsl(40 32% 96%); } .ds-select-trigger svg { opacity: 0.5; }"
+    },
+    {
+      "name": "Tooltip",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Radix-based tooltip, replacing hover-only (touch-inaccessible) tooltips.",
+      "html": "<div class=\"ds-tooltip\">Token usage: 1,204 / 8,000</div>",
+      "css": ".ds-tooltip { z-index: 50; overflow: hidden; border-radius: 6px; border: 1px solid hsl(40 16% 82%); background: hsl(40 28% 99%); color: hsl(222 40% 12%); padding: 6px 12px; font-size: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }"
+    },
+    {
+      "name": "CanvasHeader",
+      "kind": "nav",
+      "refersTo": null,
+      "description": "Studio page header: title, optional description, right-aligned actions. No eyebrow/kicker label (removed as a finish-review defect).",
+      "html": "<header class=\"ds-canvas-header\"><div><h1 class=\"ds-canvas-title\">Query workspace</h1><p class=\"ds-canvas-desc\">Ask your connected database a question in plain language.</p></div><div class=\"ds-canvas-actions\"><button class=\"ds-btn-app-primary\">New connection</button></div></header>",
+      "css": ".ds-canvas-header { display: grid; gap: 20px; border-bottom: 1px solid hsl(40 16% 82% / 0.7); padding-bottom: 20px; } .ds-canvas-title { max-width: 56rem; font-size: 24px; font-weight: 600; line-height: 1.2; color: hsl(222 40% 12%); } .ds-canvas-desc { margin-top: 8px; max-width: 48rem; font-size: 14px; line-height: 1.5; color: hsl(222 12% 40%); } .ds-canvas-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; }"
+    },
+    {
+      "name": "Triangulation Mark",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Landing hero's signature device: reticle rings, four source nodes, animated sightlines resolving to a signal-orange benchmark point. Landing-exclusive; never duplicated into studio screens.",
+      "html": "<svg viewBox=\"0 0 400 400\" width=\"200\" height=\"200\" class=\"ds-triangulation\"><circle cx=\"200\" cy=\"200\" r=\"172\" stroke=\"hsl(36 48% 40% / .28)\" stroke-dasharray=\"2 10\" fill=\"none\"/><circle cx=\"200\" cy=\"200\" r=\"122\" stroke=\"hsl(40 16% 82% / .7)\" fill=\"none\"/><circle cx=\"200\" cy=\"200\" r=\"16\" fill=\"hsl(18 82% 46%)\" opacity=\"0.6\"/><circle cx=\"200\" cy=\"200\" r=\"6\" fill=\"hsl(18 82% 46%)\"/></svg>",
+      "css": ".ds-triangulation { display: block; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Surveyor's Instrument",
+    "overview": "Keystone's landing surface stages a land surveyor's discipline: nothing is asserted until it is triangulated. A reticle sweeps a field of scattered source shapes and lets them resolve into a single cited, confidence-scored point. Deep surveyor's-ink navy grounds the field; brass/bronze carries authority; warm ivory reads as contour paper; signal-orange is spent only where the system is actively certifying something. This is a deliberately Committed palette on the public surface. The four authenticated studios share the exact same token vocabulary but run a Restrained strategy: neutrals plus the one accent, no crosshair sweep, minimal motion. This is a deliberate two-register system, not an inconsistency.",
+    "keyCharacteristics": [
+      "Committed color strategy on landing (one accent, high restraint elsewhere); Restrained variant in the four studios, sharing tokens not intensity.",
+      "Reticle/triangulation/contour-line visual grammar, native to the surveying world.",
+      "Space Grotesk + IBM Plex Mono as the only two typefaces in the shipped system.",
+      "Flat-to-tonal surfaces; the hero's frosted instrument panel is the one deliberate glass moment.",
+      "Confidence and status are always color-coded and always visible."
+    ],
+    "rules": [
+      { "name": "The Accent-Means-Something Rule", "body": "Signal-orange never fills a surface or decorates a passive element. It appears only where the system is asserting confidence or liveness.", "section": "colors" },
+      { "name": "The Cited Exception Rule", "body": "--chart-4 is deliberately reused as the semantic success/verified/ready status color across the four studios, in addition to signal-orange. This is the one place the Restrained strategy's single-accent rule is knowingly not followed literally.", "section": "colors" },
+      { "name": "The Two-Register Rule", "body": "Landing runs Committed (full palette expression, hero mechanism, glass panel). The four studios run Restrained (neutrals + signal-orange + the cited chart-4 exception only). Same tokens, different volume, by design.", "section": "colors" },
+      { "name": "The Two-Face Rule", "body": "Only Space Grotesk and IBM Plex Mono ship. Any third typeface is a defect, not an option.", "section": "typography" },
+      { "name": "The Glass-Is-Scoped Rule", "body": "Frosted glass exists exactly once — the landing hero's instrument panel. It is not a general card treatment.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do spend signal-orange only on live/confidence/certifying moments (hero resolution point, confidence readouts, high-confidence tiers, focus/selection) — per the Accent-Means-Something Rule.",
+      "Do use --chart-4 for success/verified/ready status across studios, as the one named, cited exception to the single-accent rule — not as license for further raw colors.",
+      "Do keep the landing page's Committed intensity (WebGL scene, triangulation animation, glass panel) exclusive to the public marketing surface; keep studios Restrained (tokens shared, theatrics withheld).",
+      "Do use the shared Select/Checkbox/Switch/Popover/Tooltip primitives for any new form control; they exist specifically to fix touch-inaccessible native selects and hover-only tooltips.",
+      "Do compose new studio screens from CanvasHeader + ContextRibbon + FocusCanvas + Inspector; this is the converged, canonical chrome system."
+    ],
+    "donts": [
+      "Don't add a kicker/eyebrow label above a heading anywhere in the product. This was shipped as a systemic defect and removed outright, including deleting the eyebrow prop from CanvasHeader itself.",
+      "Don't introduce a third display typeface. Newsreader was fully removed once weight/style variation within Space Grotesk proved sufficient.",
+      "Don't fabricate decorative data visualization. One was shipped in TechnicalProof.tsx, flagged in finish review, and deleted rather than fixed.",
+      "Don't use .glass-panel/frosted backdrop-blur as a general card treatment outside the landing hero's instrument panel.",
+      "Don't introduce raw Tailwind color utilities (emerald-500, green-500, sky-500, etc.) for status or semantic meaning; route through the existing HSL custom properties even under deadline pressure — this defect class was found and fixed twice before shipping clean."
+    ]
+  }
+}

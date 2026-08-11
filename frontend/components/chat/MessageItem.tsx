@@ -1,0 +1,524 @@
+/**
+ * MessageItem - Individual message display component
+ */
+
+'use client';
+
+import { useState, useCallback, useMemo } from 'react';
+import { User, Bot, FileText, ChevronDown, ChevronUp, Brain, Zap, Copy, Check, MessageCircle, ShieldCheck } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+import { formatTimestamp } from '@/lib/utils';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import type { Message } from '@/lib/types';
+import { DrawioDiagram } from './DrawioDiagram';
+
+const DIAGRAM_SPLIT_TOKEN = '||DIAGRAM_SPLIT||';
+
+interface MessageItemProps {
+  message: Message;
+  showConfidence?: boolean;
+}
+
+export function MessageItem({ message, showConfidence = false }: MessageItemProps) {
+  const isUser = message.role === 'user';
+  const [showSources, setShowSources] = useState(false);
+  const [showReasoning, setShowReasoning] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const unwrapMarkdownFence = useCallback((value: string) => {
+    const trimmed = value.trim();
+    const match = trimmed.match(/^```(?:md|markdown)?\s*([\s\S]*?)\s*```$/i);
+    return match ? match[1].trim() : value;
+  }, []);
+
+  /**
+   * Preprocess markdown to fix common rendering issues:
+   * 1. Convert <br>, <br/>, <br /> to proper Markdown line breaks
+   * 2. Normalize stray HTML that causes half-raw rendering
+   * 3. Ensure consistent formatting
+   */
+  const preprocessMarkdown = useCallback((text: string): string => {
+    let processed = text;
+
+    const normalizeUnmatchedDelimiters = (value: string, delimiter: string): string => {
+      const parts = value.split(delimiter);
+      if (parts.length <= 2) return value;
+      const delimiterCount = parts.length - 1;
+      if (delimiterCount % 2 === 0) return value;
+
+      const lastIndex = value.lastIndexOf(delimiter);
+      if (lastIndex === -1) return value;
+      return `${value.slice(0, lastIndex)}${value.slice(lastIndex + delimiter.length)}`;
+    };
+
+    const normalizeTableCellEmphasis = (value: string): string => {
+      return value
+        .split('\n')
+        .map((line) => {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('|') || !trimmed.includes('|')) return line;
+
+          const cells = line.split('|');
+          if (cells.length < 3) return line;
+
+          return cells
+            .map((cell, idx) => {
+              if (idx === 0 || idx === cells.length - 1) return cell;
+
+              let normalizedCell = normalizeUnmatchedDelimiters(cell, '**');
+              normalizedCell = normalizeUnmatchedDelimiters(normalizedCell, '__');
+              return normalizedCell;
+            })
+            .join('|');
+        })
+        .join('\n');
+    };
+
+    // Unescape common markdown escapes emitted by some models
+    processed = processed.replace(/\\\*/g, '*');
+    processed = processed.replace(/\\_/g, '_');
+    processed = processed.replace(/\\`/g, '`');
+
+    // Convert <br>, <br/>, <br /> variants to double newlines for block separation
+    // or two-spaces + newline for inline line breaks
+    processed = processed.replace(/<br\s*\/?\s*>\s*<br\s*\/?\s*>/gi, '\n\n');
+    processed = processed.replace(/<br\s*\/?\s*>/gi, '  \n');
+
+    // Fix <p> tags that sometimes appear in LLM output
+    processed = processed.replace(/<p>/gi, '\n\n');
+    processed = processed.replace(/<\/p>/gi, '\n');
+
+    // Fix <b> and <i> tags to Markdown equivalents
+    processed = processed.replace(/<b>(.*?)<\/b>/gi, '**$1**');
+    processed = processed.replace(/<i>(.*?)<\/i>/gi, '*$1*');
+    processed = processed.replace(/<strong>(.*?)<\/strong>/gi, '**$1**');
+    processed = processed.replace(/<em>(.*?)<\/em>/gi, '*$1*');
+
+    // Fix <ul>/<ol>/<li> tags to Markdown lists
+    processed = processed.replace(/<ul>/gi, '\n');
+    processed = processed.replace(/<\/ul>/gi, '\n');
+    processed = processed.replace(/<ol>/gi, '\n');
+    processed = processed.replace(/<\/ol>/gi, '\n');
+    processed = processed.replace(/<li>/gi, '- ');
+    processed = processed.replace(/<\/li>/gi, '\n');
+
+    // Fix <h1>-<h6> tags to Markdown headings
+    processed = processed.replace(/<h1>(.*?)<\/h1>/gi, '# $1\n');
+    processed = processed.replace(/<h2>(.*?)<\/h2>/gi, '## $1\n');
+    processed = processed.replace(/<h3>(.*?)<\/h3>/gi, '### $1\n');
+    processed = processed.replace(/<h4>(.*?)<\/h4>/gi, '#### $1\n');
+    processed = processed.replace(/<h5>(.*?)<\/h5>/gi, '##### $1\n');
+    processed = processed.replace(/<h6>(.*?)<\/h6>/gi, '###### $1\n');
+
+    // Clean up <div> wrappers (common in mixed output)
+    processed = processed.replace(/<div[^>]*>/gi, '\n');
+    processed = processed.replace(/<\/div>/gi, '\n');
+
+    // Fix <a> tags to Markdown links
+    processed = processed.replace(/<a\s+href="([^"]+)"[^>]*>(.*?)<\/a>/gi, '[$2]($1)');
+
+    // Clean up <span> tags (strip them, keep content)
+    processed = processed.replace(/<span[^>]*>(.*?)<\/span>/gi, '$1');
+
+    // Fix consecutive newlines (max 2)
+    processed = processed.replace(/\n{3,}/g, '\n\n');
+
+    // Table rows need per-cell normalization so delimiters don't leak across columns
+    processed = normalizeTableCellEmphasis(processed);
+
+    // Repair unmatched markdown emphasis delimiters per line
+    processed = processed
+      .split('\n')
+      .map((line) => {
+        let normalizedLine = normalizeUnmatchedDelimiters(line, '**');
+        normalizedLine = normalizeUnmatchedDelimiters(normalizedLine, '__');
+        return normalizedLine;
+      })
+      .join('\n');
+
+    return processed;
+  }, []);
+
+  const typingPreview = useMemo(() => {
+    if (!message.isTyping) return '';
+    return message.content
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .replace(/__(.*?)__/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\*\*/g, '')
+      .replace(/__/g, '');
+  }, [message.content, message.isTyping]);
+
+  const extractedContent = useMemo(() => {
+    const content = message.content;
+
+    const textParts: string[] = [];
+    let xmlParts: string[] = [];
+    let lastIndex = 0;
+    const regex = /<mxfile[\s\S]*?<\/mxfile>/g;
+    let match;
+
+    while ((match = regex.exec(content)) !== null) {
+      const textBefore = content.substring(lastIndex, match.index).trim();
+      if (textBefore) {
+        textParts.push(unwrapMarkdownFence(textBefore));
+      }
+      xmlParts.push(match[0]);
+      lastIndex = regex.lastIndex;
+    }
+
+    const textAfter = content.substring(lastIndex).trim();
+    if (textAfter) {
+      textParts.push(unwrapMarkdownFence(textAfter));
+    }
+
+    if (textParts.length === 0) {
+      const onlyDiagram = /<mxfile[\s\S]*?<\/mxfile>/i.test(content);
+      textParts.push(onlyDiagram ? '' : unwrapMarkdownFence(content));
+    }
+
+    const diagramXmlParts = (message.diagramXml || '')
+      .split(DIAGRAM_SPLIT_TOKEN)
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    if (diagramXmlParts.length > 0) {
+      const remainingXml = xmlParts.slice(diagramXmlParts.length);
+      xmlParts = [...diagramXmlParts, ...remainingXml];
+    }
+
+    return { text: preprocessMarkdown(textParts.join('\n\n')), diagrams: xmlParts };
+  }, [message.content, message.diagramXml, unwrapMarkdownFence, preprocessMarkdown]);
+
+  const confidenceTier = useMemo(() => {
+    if (message.confidence_score === undefined) return 'high';
+    if (message.confidence_score >= 80) return 'high';
+    if (message.confidence_score >= 50) return 'medium';
+    return 'low';
+  }, [message.confidence_score]);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  }, [message.content]);
+
+  return (
+    <div
+      className={cn(
+        'flex w-full gap-3 px-4',
+        isUser ? 'justify-end' : 'justify-start'
+      )}
+    >
+      {/* Avatar for Assistant */}
+      {!isUser && (
+        <div className="flex h-11 w-11 shrink-0 select-none items-center justify-center rounded-2xl logo-mark shadow-xl ring-2 ring-foreground/10 hover:shadow-2xl transition-all duration-300">
+          <Bot className="h-5 w-5 text-primary-foreground" />
+        </div>
+      )}
+
+      {/* Content */}
+      <div className={cn(
+        "flex flex-col max-w-[84%]",
+        isUser ? "items-end" : "items-start"
+      )}>
+        <div className="flex items-center gap-2 mb-2 px-1">
+          <span className={cn(
+            "text-xs font-semibold tracking-wide",
+            isUser 
+              ? "text-foreground" 
+              : "text-muted-foreground"
+          )}>
+            {isUser ? 'You' : 'AI Assistant'}
+          </span>
+          <span className="text-xs text-muted-foreground">•</span>
+          <span className="text-xs text-muted-foreground font-medium">
+            {formatTimestamp(message.timestamp)}
+          </span>
+        </div>
+
+        {/* Context file badges (Copilot-style) */}
+        {isUser && message.contextFiles && message.contextFiles.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2 px-1">
+            {message.contextFiles.map((file) => (
+              <Badge
+                key={file.id}
+                variant="outline"
+                className="text-xs py-0.5 px-2 bg-muted/60 text-foreground border-border/60"
+              >
+                <FileText className="h-2.5 w-2.5 mr-1" />
+                {file.filename}
+              </Badge>
+            ))}
+          </div>
+        )}
+
+        {/* Message content */}
+        <div className={cn(
+          'relative overflow-hidden rounded-2xl px-6 py-4 text-sm shadow-xl transition-all duration-300',
+          isUser 
+            ? 'bubble-user rounded-tr-sm border border-border/70 text-foreground shadow-[0_24px_60px_-44px_rgba(0,0,0,0.4)]' 
+            : 'bubble-bot rounded-tl-sm border border-border/70 text-foreground shadow-[0_22px_60px_-45px_rgba(0,0,0,0.4)] hover:shadow-[0_32px_90px_-62px_rgba(0,0,0,0.5)]',
+          !isUser && 'group/msg'
+        )}>
+          {/* Decorative gradient overlay for assistant messages */}
+          {!isUser && (
+            <div className="absolute inset-0 bg-gradient-to-br from-foreground/5 via-transparent to-transparent pointer-events-none" />
+          )}
+          {isUser && (
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[hsl(var(--chart-1)/0.12)] via-transparent to-[hsl(var(--chart-2)/0.08)]" />
+          )}
+
+          {/* Copy button for assistant messages */}
+          {!isUser && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="absolute top-2 right-2 z-20 p-1.5 rounded-lg bg-muted/70 hover:bg-muted border border-border/70 text-muted-foreground hover:text-foreground transition-all duration-200 opacity-0 group-hover/msg:opacity-100 focus:opacity-100"
+              title="Copy to clipboard"
+            >
+              {copied ? (
+                <Check className="h-3.5 w-3.5 text-emerald-500" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </button>
+          )}
+          
+          <div className={cn(
+            'prose prose-sm max-w-none relative z-10',
+            isUser 
+              ? 'text-foreground prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground prose-code:text-foreground' 
+              : 'text-foreground prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground',
+            // Better table styling
+            'prose-table:text-sm prose-table:border-collapse',
+            'prose-th:border prose-th:border-border prose-th:bg-muted/70 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-th:font-semibold prose-th:text-foreground',
+            'prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2 prose-td:text-foreground/90',
+            'prose-tr:border-b prose-tr:border-border',
+            // Better list styling
+            'prose-ul:my-2 prose-ol:my-2 prose-li:text-foreground',
+            'prose-li:my-1',
+            // Better code styling
+            'prose-code:text-xs prose-code:bg-muted/70 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-foreground prose-code:border prose-code:border-border',
+            'prose-pre:bg-muted/80 prose-pre:border prose-pre:border-border prose-pre:text-foreground'
+          )}>
+            {isUser ? (
+              <p className="whitespace-pre-wrap m-0 leading-relaxed font-medium tracking-wide">{message.content}</p>
+            ) : (
+              <>
+                {message.isTyping ? (
+                  <p className="whitespace-pre-wrap m-0 leading-relaxed text-foreground">{typingPreview}</p>
+                ) : (
+                  extractedContent.text && (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeRaw]}
+                      components={{
+                        table: ({ ...props }) => (
+                          <div className="overflow-x-auto my-4">
+                            <table className="min-w-full divide-y divide-border" {...props} />
+                          </div>
+                        ),
+                        th: ({ ...props }) => (
+                          <th className="bg-muted/70 px-3 py-2 text-left text-xs font-semibold text-foreground border border-border" {...props} />
+                        ),
+                        td: ({ ...props }) => (
+                          <td className="px-3 py-2 text-sm border border-border text-foreground/90" {...props} />
+                        ),
+                        h1: ({ ...props }) => (
+                          <h1 className="text-2xl font-bold mt-6 mb-3 text-foreground border-b border-border/80 pb-2" {...props} />
+                        ),
+                        h2: ({ ...props }) => (
+                          <h2 className="text-xl font-semibold mt-5 mb-2 text-foreground" {...props} />
+                        ),
+                        h3: ({ ...props }) => (
+                          <h3 className="text-lg font-semibold mt-4 mb-2 text-foreground" {...props} />
+                        ),
+                        p: ({ ...props }) => (
+                          <p className="mb-3 leading-relaxed text-foreground" {...props} />
+                        ),
+                        ul: ({ ...props }) => (
+                          <ul className="list-disc list-outside ml-6 my-3 space-y-2 text-foreground marker:text-foreground" {...props} />
+                        ),
+                        ol: ({ ...props }) => (
+                          <ol className="list-decimal list-outside ml-6 my-3 space-y-2 text-foreground marker:text-foreground marker:font-semibold" {...props} />
+                        ),
+                        li: ({ ...props }) => (
+                          <li className="text-foreground leading-relaxed pl-1" {...props} />
+                        ),
+                        code: ({ inline, ...props }: React.ComponentPropsWithoutRef<'code'> & { inline?: boolean }) => 
+                          inline ? (
+                            <code className="bg-muted/80 px-2 py-0.5 rounded text-sm font-mono text-foreground border border-border shadow-inner" {...props} />
+                          ) : (
+                            <code className="block bg-muted/80 p-4 rounded-lg text-sm font-mono overflow-x-auto my-3 text-foreground border border-border shadow-lg shadow-[hsl(var(--data)/0.1)]" {...props} />
+                          ),
+                        pre: ({ ...props }) => (
+                          <pre className="bg-muted/80 p-4 rounded-lg overflow-x-auto my-3 border border-border shadow-lg shadow-[hsl(var(--data)/0.1)]" {...props} />
+                        ),
+                        blockquote: ({ ...props }) => (
+                          <blockquote className="border-l-2 border-[hsl(var(--copper)/0.6)] pl-4 italic my-3 text-foreground bg-[hsl(var(--copper)/0.08)] py-2 rounded-r" {...props} />
+                        ),
+                        hr: ({ ...props }) => (
+                          <hr className="my-4 border-border" {...props} />
+                        ),
+                        strong: ({ ...props }) => (
+                          <strong className="font-semibold text-foreground" {...props} />
+                        ),
+                        em: ({ ...props }) => (
+                          <em className="italic text-foreground/80" {...props} />
+                        ),
+                        a: ({ ...props }) => (
+                          <a className="text-foreground underline underline-offset-2" {...props} />
+                        ),
+                      }}
+                    >
+                      {extractedContent.text}
+                    </ReactMarkdown>
+                  )
+                )}
+                {extractedContent.diagrams.map((diagramXml, idx) => (
+                  <DrawioDiagram key={idx} xml={diagramXml} title="Generated diagram" />
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Badges for assistant messages */}
+        {!isUser && (showConfidence || (message.sources && message.sources.length > 0) || message.reasoning || message.mode) && (
+          <div className="flex flex-col gap-2 pt-2 px-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Confidence: the primary trust signal, given the most visual weight */}
+              {showConfidence && message.confidence_score !== undefined && (
+                <div className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold",
+                  confidenceTier === 'high'
+                    ? "border-[hsl(var(--signal)/.4)] bg-[hsl(var(--signal)/.14)] text-[hsl(var(--signal))]"
+                    : confidenceTier === 'medium'
+                      ? "border-[hsl(var(--copper)/.45)] bg-[hsl(var(--copper)/.14)] text-[hsl(var(--copper))]"
+                      : "border-destructive/40 bg-destructive/10 text-destructive"
+                )}>
+                  <ShieldCheck className="h-3 w-3" />
+                  {Math.round(message.confidence_score)}% confidence
+                </div>
+              )}
+
+              {/* Mode: quiet secondary metadata, not competing with confidence */}
+              {message.mode && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                  {message.mode === 'think' ? <Brain className="h-3 w-3" /> : message.mode === 'ask' ? <MessageCircle className="h-3 w-3" /> : <Zap className="h-3 w-3" />}
+                  {message.mode === 'think' ? 'Think' : message.mode === 'ask' ? 'Ask' : 'Fast'}
+                </span>
+              )}
+
+              <span className="ml-auto flex items-center gap-2">
+                {/* Reasoning toggle: clearly a secondary action, not a fact badge */}
+                {message.reasoning && (
+                  <button
+                    type="button"
+                    onClick={() => setShowReasoning(!showReasoning)}
+                    aria-expanded={showReasoning}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-transparent px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                  >
+                    <Brain className="h-3 w-3" />
+                    <span>Reasoning</span>
+                    {showReasoning ? (
+                      <ChevronUp className="h-3 w-3" />
+                    ) : (
+                      <ChevronDown className="h-3 w-3" />
+                    )}
+                  </button>
+                )}
+
+                {/* Sources toggle: clearly a secondary action, not a fact badge */}
+                {message.sources && message.sources.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSources(!showSources)}
+                    aria-expanded={showSources}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-transparent px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                  >
+                    <FileText className="h-3 w-3" />
+                    <span>Sources ({message.sources.length})</span>
+                    {showSources ? (
+                      <ChevronUp className="h-3 w-3" />
+                    ) : (
+                      <ChevronDown className="h-3 w-3" />
+                    )}
+                  </button>
+                )}
+              </span>
+            </div>
+
+            {/* Collapsible reasoning panel */}
+            {showReasoning && message.reasoning && (
+              <div className="mt-2 animate-in slide-in-from-top-2 duration-200">
+                <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 text-xs">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Brain className="h-4 w-4 text-primary" />
+                    <span className="font-semibold text-primary">Reasoning Steps</span>
+                  </div>
+                  <div className="text-foreground/80 leading-relaxed whitespace-pre-wrap prose prose-sm max-w-none">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                      {preprocessMarkdown(message.reasoning)}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Collapsible sources list */}
+            {showSources && message.sources && message.sources.length > 0 && (
+              <div className="mt-2 space-y-2 animate-in slide-in-from-top-2 duration-200">
+                {message.sources.map((source, idx) => (
+                  <div
+                    key={idx}
+                    className="bg-workspace-raised border border-border/70 rounded-lg p-3 text-xs hover:border-secondary/40 transition-all duration-200"
+                  >
+                    <div className="flex items-start gap-2">
+                      <FileText className="h-4 w-4 text-secondary flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 space-y-1">
+                        <div className="font-semibold text-foreground">
+                          {source.document}
+                          {source.page && (
+                            <span className="text-muted-foreground font-normal ml-1">
+                              (Page {source.page})
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <span className="px-2 py-0.5 bg-secondary/10 border border-secondary/20 rounded text-secondary font-medium">
+                            {Math.round(source.relevance_score * 100)}% relevance
+                          </span>
+                        </div>
+                        {source.text_snippet && (
+                          <div className="text-foreground/80 leading-relaxed mt-1 pt-2 border-t border-border/60">
+                            &quot;{source.text_snippet}&quot;
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Avatar for User */}
+      {isUser && (
+        <div className="flex h-11 w-11 shrink-0 select-none items-center justify-center rounded-2xl logo-mark shadow-xl ring-2 ring-foreground/10 hover:shadow-2xl transition-all duration-300">
+          <User className="h-5 w-5 text-primary-foreground" />
+        </div>
+      )}
+    </div>
+  );
+}

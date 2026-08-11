@@ -1,0 +1,211 @@
+"""
+Configuration management for the RAG system.
+Handles environment variables and application settings.
+"""
+
+from typing import List
+from pydantic_settings import BaseSettings
+from pydantic import Field
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+    
+    # LLM Provider Configuration
+    llm_provider: str = Field(default="groq", alias="LLM_PROVIDER")  # "groq" or "openrouter"
+    llm_api_key: str = Field(default="", alias="LLM_API_KEY")  # Overrides provider-specific key
+    llm_model: str = Field(default="", alias="LLM_MODEL")  # Overrides provider-specific model
+    llm_structured_model: str = Field(default="", alias="LLM_STRUCTURED_MODEL")  # Small model for JSON tasks
+    llm_context_window: int = Field(default=131072, alias="LLM_CONTEXT_WINDOW")
+
+    # Groq Configuration (legacy — used as fallback when LLM_PROVIDER="groq")
+    groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
+    groq_model: str = Field(default="llama-3.1-70b-versatile", alias="GROQ_MODEL")
+    
+    # Ollama LLM configuration (OpenAI-compatible API)
+    ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
+    ollama_llm_model: str = Field(default="", alias="OLLAMA_LLM_MODEL")
+    ollama_llm_max_tokens: int = Field(default=4096, alias="OLLAMA_LLM_MAX_TOKENS")
+    ollama_api_key: str = Field(default="", alias="OLLAMA_API_KEY")
+
+    # Ollama Embedding/Reranker configuration
+    ollama_embedding_model: str = Field(default="embeddinggemma", alias="OLLAMA_EMBEDDING_MODEL")
+    ollama_reranker_model: str = Field(default="bge-reranker-v2-m3", alias="OLLAMA_RERANKER_MODEL")
+
+    # Embedding & Reranker Provider Selection
+    embedding_provider: str = Field(default="remote", alias="EMBEDDING_PROVIDER")
+    reranker_provider: str = Field(default="remote", alias="RERANKER_PROVIDER")
+
+    # Cohere Configuration
+    cohere_api_key: str = Field(default="", alias="COHERE_API_KEY")
+    cohere_embedding_model: str = Field(default="embed-english-v3.0", alias="COHERE_EMBEDDING_MODEL")
+    cohere_rerank_model: str = Field(default="rerank-english-v3.0", alias="COHERE_RERANK_MODEL")
+
+    
+    # Remote Embedding Service Configuration (Lightning.ai)
+    use_remote_embedding_service: bool = Field(default=False, alias="USE_REMOTE_EMBEDDING_SERVICE")
+    use_remote_reranker_service: bool = Field(default=False, alias="USE_REMOTE_RERANKER_SERVICE")
+    remote_embedding_service_url: str = Field(
+        default="https://8001-01kcxs65eap7vtj55ymz4r6xag.cloudspaces.litng.ai",
+        alias="REMOTE_EMBEDDING_SERVICE_URL"
+    )
+    embedding_batch_size: int = Field(default=10, alias="EMBEDDING_BATCH_SIZE")
+    embedding_request_timeout: int = Field(default=120, alias="EMBEDDING_REQUEST_TIMEOUT")  # 2 minutes for large batches
+    
+    # PostgreSQL Configuration
+    postgres_host: str = Field(default="localhost", alias="POSTGRES_HOST")
+    postgres_port: int = Field(default=5432, alias="POSTGRES_PORT")
+    postgres_db: str = Field(default="public", alias="POSTGRES_DB")
+    postgres_user: str = Field(default="postgres", alias="POSTGRES_USER")
+    postgres_password: str = Field(default="postgres", alias="POSTGRES_PASSWORD")
+    postgres_table_name: str = Field(default="rag_embeddings", alias="POSTGRES_TABLE_NAME")
+    aurasql_table_name: str = Field(default="aurasql_embeddings", alias="AURASQL_TABLE_NAME")
+    nexus_resume_table_name: str = Field(default="nexus_resume_embeddings", alias="NEXUS_RESUME_TABLE_NAME")
+
+    # Messaging Configuration
+    rabbitmq_url: str = Field(
+        default="amqp://guest:guest@localhost:5672/",
+        alias="RABBITMQ_URL",
+    )
+
+    # Auth & Encryption Configuration
+    jwt_secret: str = Field(default="dev-secret", alias="JWT_SECRET")
+    jwt_refresh_secret: str = Field(default="dev-refresh-secret", alias="JWT_REFRESH_SECRET")
+    jwt_access_exp_minutes: int = Field(default=15, alias="JWT_ACCESS_EXP_MINUTES")
+    jwt_refresh_exp_days: int = Field(default=30, alias="JWT_REFRESH_EXP_DAYS")
+    aurasql_master_key: str = Field(default="", alias="AURASQL_MASTER_KEY")
+    
+    # Data Storage Configuration
+    data_dir: str = Field(default="./data", alias="DATA_DIR")
+    
+    # API Configuration
+    api_host: str = Field(default="0.0.0.0", alias="API_HOST")
+    api_port: int = Field(default=8000, alias="API_PORT")
+    api_reload: bool = Field(default=False, alias="API_RELOAD")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    enabled_app_ids: List[str] = Field(default_factory=list, alias="NEXUS_ENABLED_APPS")
+
+    # Langfuse Observability Configuration
+    langfuse_enabled: bool = Field(default=False, alias="LANGFUSE_ENABLED")
+    langfuse_host: str = Field(default="", alias="LANGFUSE_HOST")
+    langfuse_public_key: str = Field(default="", alias="LANGFUSE_PUBLIC_KEY")
+    langfuse_secret_key: str = Field(default="", alias="LANGFUSE_SECRET_KEY")
+    langfuse_env: str = Field(default="dev", alias="LANGFUSE_ENV")
+    langfuse_sample_rate_dev: float = Field(default=1.0, alias="LANGFUSE_SAMPLE_RATE_DEV")
+    langfuse_sample_rate_staging: float = Field(default=1.0, alias="LANGFUSE_SAMPLE_RATE_STAGING")
+    langfuse_sample_rate_prod: float = Field(default=0.2, alias="LANGFUSE_SAMPLE_RATE_PROD")
+    
+    # File Upload Configuration
+    max_upload_size_mb: int = Field(default=50, alias="MAX_UPLOAD_SIZE_MB")  # 50 MB default
+    allowed_file_extensions: List[str] = Field(
+        default=[".txt", ".md", ".pdf", ".docx"],
+        alias="ALLOWED_FILE_EXTENSIONS"
+    )
+
+    # Nexus Resume Configuration
+    nexus_resume_upload_dir: str = Field(
+        default="./data/resumes",
+        alias="NEXUS_RESUME_UPLOAD_DIR",
+    )
+    nexus_resume_allowed_extensions: List[str] = Field(
+        default=[".pdf", ".docx", ".doc", ".txt"],
+        alias="NEXUS_RESUME_ALLOWED_EXTENSIONS",
+    )
+    nexus_resume_max_size_mb: int = Field(
+        default=20,
+        alias="NEXUS_RESUME_MAX_SIZE_MB",
+    )
+    
+    # RAG Configuration
+    chunk_size: int = Field(default=512, alias="CHUNK_SIZE")
+    chunk_overlap: int = Field(default=128, alias="CHUNK_OVERLAP")
+    top_k_retrieval: int = Field(default=15, alias="TOP_K_RETRIEVAL")  # Retrieve top 15 nodes from all selected documents
+    top_k_rerank: int = Field(default=5, alias="TOP_K_RERANK")  # Rerank to top 5 most relevant
+    similarity_threshold: float = Field(default=0.3, alias="SIMILARITY_THRESHOLD")  # Lower threshold - let reranker filter quality
+    
+    # Chat Configuration
+    max_chat_history: int = Field(default=10, alias="MAX_CHAT_HISTORY")
+    max_tokens: int = Field(default=4096, alias="MAX_TOKENS")  # Increased for capable models
+
+    # AuraSQL Configuration
+    aurasql_max_tokens: int = Field(default=1024, alias="AURASQL_MAX_TOKENS")
+    aurasql_top_k: int = Field(default=3, alias="AURASQL_TOP_K")
+    
+    # PageIndex / Think Mode Configuration
+    pageindex_max_pages_per_chunk: int = Field(default=15, alias="PAGEINDEX_MAX_PAGES_PER_CHUNK")
+    pageindex_auto_generate: bool = Field(default=False, alias="PAGEINDEX_AUTO_GENERATE")  # Auto-generate trees on PDF upload
+
+    # Data Analysis Configuration
+    analysis_max_rows: int = Field(default=50000, alias="ANALYSIS_MAX_ROWS")
+    analysis_max_file_size_mb: int = Field(default=50, alias="ANALYSIS_MAX_FILE_SIZE_MB")
+    analysis_workflow_timeout: int = Field(default=900, alias="ANALYSIS_WORKFLOW_TIMEOUT")
+    analysis_subworkflow_timeout: int = Field(default=300, alias="ANALYSIS_SUBWORKFLOW_TIMEOUT")
+    analysis_upload_dir: str = Field(default="./data/analysis_uploads", alias="ANALYSIS_UPLOAD_DIR")
+    analysis_chart_dir: str = Field(default="./data/analysis_charts", alias="ANALYSIS_CHART_DIR")
+    analysis_slide_dir: str = Field(default="./data/analysis_slides", alias="ANALYSIS_SLIDE_DIR")
+    analysis_allowed_extensions: List[str] = Field(
+        default=[".csv", ".xlsx", ".parquet", ".json"],
+        alias="ANALYSIS_ALLOWED_EXTENSIONS",
+    )
+    analysis_llm_token_budget: int = Field(default=8000, alias="ANALYSIS_LLM_TOKEN_BUDGET")
+    analysis_llm_max_retries: int = Field(default=3, alias="ANALYSIS_LLM_MAX_RETRIES")
+    analysis_circuit_breaker_threshold: int = Field(default=5, alias="ANALYSIS_CIRCUIT_BREAKER_THRESHOLD")
+    analysis_rate_limit_per_minute: int = Field(default=10, alias="ANALYSIS_RATE_LIMIT_PER_MINUTE")
+    analysis_storage_backend: str = Field(default="local", alias="ANALYSIS_STORAGE_BACKEND")
+
+    # Confidence Scoring Weights
+    # Increased retrieval weight since it's the most reliable signal
+    weight_retrieval: float = Field(default=0.55, alias="WEIGHT_RETRIEVAL")
+    weight_coherence: float = Field(default=0.25, alias="WEIGHT_COHERENCE")
+    weight_coverage: float = Field(default=0.15, alias="WEIGHT_COVERAGE")
+    weight_clarity: float = Field(default=0.05, alias="WEIGHT_CLARITY")
+    
+    # CORS Configuration
+    cors_origins: List[str] = Field(
+        default=["http://localhost:3000"], 
+        alias="CORS_ORIGINS"
+    )
+    
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = False
+        extra = "ignore"
+
+    @property
+    def normalized_cors_origins(self) -> List[str]:
+        origins: List[str] = []
+        for origin in self.cors_origins:
+            cleaned = (origin or "").strip().rstrip("/")
+            if cleaned:
+                origins.append(cleaned)
+                if cleaned == "http://localhost:3000":
+                    origins.append("http://127.0.0.1:3000")
+                elif cleaned == "http://127.0.0.1:3000":
+                    origins.append("http://localhost:3000")
+                elif cleaned == "https://localhost:3000":
+                    origins.append("https://127.0.0.1:3000")
+                elif cleaned == "https://127.0.0.1:3000":
+                    origins.append("https://localhost:3000")
+        return list(dict.fromkeys(origins))
+
+    def validate_security_posture(self) -> None:
+        insecure_defaults = {
+            "JWT_SECRET": self.jwt_secret == "dev-secret",
+            "JWT_REFRESH_SECRET": self.jwt_refresh_secret == "dev-refresh-secret",
+            "POSTGRES_PASSWORD": self.postgres_password == "postgres",
+        }
+
+        if self.api_reload:
+            return
+
+        bad_keys = [key for key, is_bad in insecure_defaults.items() if is_bad]
+        if bad_keys:
+            raise ValueError(
+                f"Insecure production configuration detected for: {', '.join(bad_keys)}. "
+                "Set strong secrets before starting the API."
+            )
+
+
+# Global settings instance
+settings = Settings()

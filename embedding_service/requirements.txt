@@ -1,0 +1,20 @@
+# FastAPI Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.11.5
+
+# Embedding Models
+sentence-transformers
+torch
+transformers
+
+# Ollama Client
+ollama>=0.3.1
+numpy
+# HTTP Client
+
+# Retry Logic
+tenacity==8.2.3
+
+# Logging
+structlog==23.2.0

@@ -1,0 +1,179 @@
+"""Nexus resume scoring endpoints."""
+
+from typing import List
+from fastapi import APIRouter, UploadFile, File, Form, Depends, status, HTTPException
+from sqlalchemy.orm import Session
+
+from app.db.database import get_db
+from app.db.models import NexusResumeFile, NexusResumeAnalysis, User
+from app.api.deps import get_current_user
+from app.services.messaging import publish_message
+import uuid
+import os
+from app.config import settings
+from app.models.schemas import (
+    ResumeUploadResponse,
+    ResumeFileInfo,
+    ResumeListResponse,
+    ResumeAnalyzeRequest,
+    ResumeAnalyzeResponse,
+    ResumeHistoryResponse,
+    ResumeDashboardResponse,
+)
+from app.services.nexus_resume_service import (
+    upload_resume,
+    list_resumes,
+    analyze_resume,
+    list_history,
+    build_dashboard,
+    delete_resume,
+)
+
+router = APIRouter(prefix="/nexus", tags=["Nexus"])
+
+
+def _serialize_resume(resume: NexusResumeFile) -> ResumeFileInfo:
+    return ResumeFileInfo(
+        id=resume.id,
+        resume_id=resume.resume_id,
+        filename=resume.filename,
+        status=resume.status,
+        created_at=resume.created_at.isoformat() if resume.created_at else "",
+        updated_at=resume.updated_at.isoformat() if resume.updated_at else None,
+    )
+
+
+def _serialize_analysis(analysis: NexusResumeAnalysis) -> ResumeAnalyzeResponse:
+    analysis_data = analysis.analysis or {}
+    return ResumeAnalyzeResponse(
+        analysis_id=analysis.id,
+        resume_id=analysis.resume_id,
+        overall_score=analysis.overall_score,
+        job_description=analysis.job_description,
+        analysis=analysis_data,
+        refined_recommendations=analysis_data.get("refined_recommendations"),
+        refined_justifications=analysis_data.get("refined_justifications"),
+        resume_data=analysis_data.get("resume_data"),
+        created_at=analysis.created_at.isoformat() if analysis.created_at else "",
+    )
+
+
+@router.post("/resumes/upload", status_code=status.HTTP_202_ACCEPTED)
+async def upload_resume_endpoint(
+    file: UploadFile = File(...),
+    user_id: int = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+        
+    job_id = str(uuid.uuid4())
+    tmp_dir = os.path.join(settings.data_dir, "tmp")
+    os.makedirs(tmp_dir, exist_ok=True)
+    file_path = os.path.join(tmp_dir, f"{job_id}_{file.filename}")
+    
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+        
+    message = {
+        "job_id": job_id,
+        "user_id": user_id,
+        "job_type": "upload_resume",
+        "file_path": file_path,
+        "filename": file.filename
+    }
+    await publish_message("jobs", message)
+    return {"job_id": job_id, "status": "accepted", "message": "Resume upload job queued"}
+
+
+@router.get("/resumes/{user_id}", response_model=ResumeListResponse, status_code=status.HTTP_200_OK)
+async def list_resumes_endpoint(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    resumes = list_resumes(db, user_id)
+    return ResumeListResponse(
+        list=[_serialize_resume(resume) for resume in resumes],
+        total=len(resumes),
+    )
+
+
+@router.post("/resumes/analyze", status_code=status.HTTP_202_ACCEPTED)
+async def analyze_resume_endpoint(
+    request: ResumeAnalyzeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if request.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    if not request.job_description.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job description is required")
+        
+    job_id = str(uuid.uuid4())
+    message = {
+        "job_id": job_id,
+        "user_id": request.user_id,
+        "job_type": "analyze_resume",
+        "resume_id": request.resume_id,
+        "job_description": request.job_description
+    }
+    await publish_message("jobs", message)
+    return {"job_id": job_id, "status": "accepted", "message": "Resume analysis job queued"}
+
+
+@router.get("/resumes/history/{user_id}", response_model=ResumeHistoryResponse, status_code=status.HTTP_200_OK)
+async def resume_history_endpoint(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    history = list_history(db, user_id)
+    return ResumeHistoryResponse(
+        list=[_serialize_analysis(item) for item in history],
+        total=len(history),
+    )
+
+
+@router.get("/dashboard/{user_id}", response_model=ResumeDashboardResponse, status_code=status.HTTP_200_OK)
+async def resume_dashboard_endpoint(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    dashboard = build_dashboard(db, user_id)
+    latest = dashboard.get("latest_analysis")
+    return ResumeDashboardResponse(
+        resume_stats=dashboard.get("resume_stats", {}),
+        monthly_stats=dashboard.get("monthly_stats", []),
+        latest_analysis=_serialize_analysis(latest) if latest else None,
+    )
+
+
+@router.delete("/resumes/{user_id}/{resume_id}", status_code=status.HTTP_200_OK)
+async def delete_resume_endpoint(
+    user_id: int,
+    resume_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Delete a resume and all associated data.
+    
+    This removes:
+    - The resume file from disk
+    - All analysis records for this resume
+    - All vector embeddings for this resume
+    """
+    if user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    delete_resume(db, user_id, resume_id)
+    return {"message": "Resume deleted successfully", "resume_id": resume_id}
