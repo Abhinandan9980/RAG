@@ -216,18 +216,18 @@ Verify your API key is valid and set in the `.env` file.
 2. Add to page in `frontend/app/page.tsx`
 3. Update types in `frontend/lib/types.ts`
 
-## 👨‍💻 Developer Profile - Shivam Sourav
+## 👨‍💻 Developer Profile - Abhinandan Kumar Aditya
 
 **Personal Details**
-- **Location**: Banka, Bihar, India
-- **Email**: shivam99806@gmail.com
-- **Phone**: +91 8521846844
-- **LinkedIn**: https://linkedin.com/in/shivam-sourav-b889aa204/
-- **GitHub**: https://github.com/Shivam5560
+- **Location**: Sahibganj, Jharkhand, India
+- **Email**: abhinandankumaraditya@gmail.com
+- **Phone**: +91 7324926738
+- **LinkedIn**: 
+- **GitHub**:
 
 **Education**
-- **B.Tech in Artificial Intelligence and Data Science**, Sikkim Manipal Institute of Technology (Expected May 2025)
-- **CGPA**: 9.7
+- **B.Tech in Data Science**, Techno International NewTown (Expected May 2027)
+- **CGPA**: 7.0
 
 **Professional Experience**
 
@@ -281,4 +281,4 @@ MIT License - See LICENSE file for details
 ---
 
 **Built with ❤️ for professional RAG applications.**
-**Contact - shivamsourav2003@gmail**
+**Contact - abhinandankumaraditya@gmail**
